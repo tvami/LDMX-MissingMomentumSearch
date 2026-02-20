@@ -21,6 +21,8 @@ def main():
                         help='Number of parallel tasks per SLURM job (default: 8)')
     parser.add_argument('-f', '--files-per-task', action='store', dest='files_per_task', type=int, default=40,
                         help='Number of input files per parallel task (default: 40)')
+    parser.add_argument('--no-skip', action='store_true', dest='no_skip',
+                        help='Process all input files, ignoring existing filelists')
     args = parser.parse_args()
 
     logging.basicConfig(format='[ submitJobs ][ %(levelname)s ]: %(message)s', level=logging.DEBUG)
@@ -42,18 +44,21 @@ def main():
             os.makedirs(d)
 
     # Skip files already present in existing filelists
-    already_processed = set()
-    for fl_path in glob.glob(filelistdir + '*.txt'):
-        with open(fl_path) as fl:
-            already_processed.update(os.path.basename(p) for p in fl.read().split())
-    if already_processed:
-        before = len(input_files)
-        input_files = [f for f in input_files if os.path.basename(f) not in already_processed]
-        logging.info('Skipped %d already-listed files, %d new files to process'
-                     % (before - len(input_files), len(input_files)))
-    if not input_files:
-        logging.info('No new files to process — all files already in filelists.')
-        return
+    if not args.no_skip:
+        already_processed = set()
+        for fl_path in glob.glob(filelistdir + '*.txt'):
+            with open(fl_path) as fl:
+                already_processed.update(os.path.basename(p) for p in fl.read().split())
+        if already_processed:
+            before = len(input_files)
+            input_files = [f for f in input_files if os.path.basename(f) not in already_processed]
+            logging.info('Skipped %d already-listed files, %d new files to process'
+                         % (before - len(input_files), len(input_files)))
+        if not input_files:
+            logging.info('No new files to process — all files already in filelists.')
+            return
+    else:
+        logging.info('Skipping filelist check (--no-skip)')
 
     batch_command = 'sbatch -p roma'
     current_directory = os.getcwd()

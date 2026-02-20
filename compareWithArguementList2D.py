@@ -6,6 +6,14 @@ parser.add_option("-c", "--cut", dest="cut", default="Triggerred",
                   help="Bin label to project after (default: Triggerred). E.g. 'ECal veto', Triggerred")
 (opt,args) = parser.parse_args()
 
+def addOverflow(h):
+    """Add overflow bin content to the last visible bin."""
+    n = h.GetNbinsX()
+    h.SetBinContent(n, h.GetBinContent(n) + h.GetBinContent(n+1))
+    h.SetBinError(n, (h.GetBinError(n)**2 + h.GetBinError(n+1)**2)**0.5)
+    h.SetBinContent(n+1, 0)
+    h.SetBinError(n+1, 0)
+
 sampleInFile = sys.argv[1]
 
 ROOT.gROOT.SetBatch(True)
@@ -109,6 +117,8 @@ for i in range(0, fileInArray[0].GetListOfKeys().GetEntries()):
                   projPass = myHist.ProjectionY(keyname2 + "_BDTPass_"+str(iSample), 2, 2)
                   projFail.SetDirectory(0)
                   projPass.SetDirectory(0)
+                  addOverflow(projFail)
+                  addOverflow(projPass)
                   if projFail.Integral() == 0 and projPass.Integral() == 0 : continue
 
                   failLabel = myHist.GetXaxis().GetBinLabel(1)
@@ -150,6 +160,13 @@ for i in range(0, fileInArray[0].GetListOfKeys().GetEntries()):
                   projFail.GetXaxis().SetTitleSize(0)
                   projFail.Draw("HISTP")
                   projPass.Draw("SAMEHISTP")
+
+                  binWidthBDT = projFail.GetXaxis().GetBinWidth(1)
+                  overFlowLocBDT = projFail.GetXaxis().GetBinCenter(projFail.GetNbinsX()) - binWidthBDT/2
+                  overFlowLineBDT = ROOT.TLine()
+                  overFlowLineBDT.SetLineWidth(2)
+                  overFlowLineBDT.SetLineStyle(ROOT.kDashed)
+                  overFlowLineBDT.DrawLine(overFlowLocBDT, 0.0000001, overFlowLocBDT, ymax*100)
 
                   legendBDT = ROOT.TLegend(0.5, 0.70, 0.88, 0.89, "", "brNDC")
                   legendBDT.SetTextFont(42)
@@ -261,8 +278,10 @@ for i in range(0, fileInArray[0].GetListOfKeys().GetEntries()):
 
                   else :
                     PostCutHisto = fileIn.Get(newname).ProjectionY(keyname2 + "_ProjY"+str(i),PostCutHistoBin,PostCutHistoBin)
-                  
-                  
+
+                  if not ("TrigEff" in keyname or isCutFlow or "Acceptance" in keyname):
+                    addOverflow(PostCutHisto)
+
                   if (PostCutHisto.Integral()> 0 and not "TrigEff" in keyname and not isCutFlow) :
                     PostCutHisto.Scale(1/PostCutHisto.Integral(1,PostCutHisto.GetNbinsX()+1))
                   isSignal = any(s in SamplesArray[i] for s in ["MeV", "0.001", "0.01", "0.1", "p1"])
@@ -350,7 +369,7 @@ for i in range(0, fileInArray[0].GetListOfKeys().GetEntries()):
                       histoArray[0].GetYaxis().SetRangeUser(0.9,max_value*30)
                   binWidth = histoArray[index].GetXaxis().GetBinWidth(1)
                   firstBinLocXCent = histoArray[index].GetXaxis().GetBinCenter(1)
-                  overFlowLocXCent = histoArray[index].GetXaxis().GetBinCenter(histoArray[index].GetNbinsX()+ 1)
+                  overFlowLocXCent = histoArray[index].GetXaxis().GetBinCenter(histoArray[index].GetNbinsX())
                   overFlowLocX = (overFlowLocXCent - (binWidth)/2)
                   if (isCutFlow or "Acceptance" in keyname) :
                     overFlowLocX = 99999
@@ -511,6 +530,7 @@ for i in range(0, fileInArray[0].GetListOfKeys().GetEntries()):
                   for iY, fileIn in enumerate(fileInArray):
                     projY = fileIn.Get(newname).ProjectionY(keyname2 + "_ProjYextra"+str(iY), PostCutHistoBin, PostCutHistoBin)
                     projY.SetDirectory(0)
+                    addOverflow(projY)
                     if projY.Integral() > 0:
                       projY.Scale(1/projY.Integral(1, projY.GetNbinsX()+1))
                     histoPYArray.append(projY)
@@ -545,6 +565,12 @@ for i in range(0, fileInArray[0].GetListOfKeys().GetEntries()):
                     tex3.Draw("SAME")
                     tex4.Draw("SAME")
                     tex5.Draw("SAME")
+                    binWidthPY = histoPYArray[0].GetXaxis().GetBinWidth(1)
+                    overFlowLocPY = histoPYArray[0].GetXaxis().GetBinCenter(histoPYArray[0].GetNbinsX()) - binWidthPY/2
+                    overFlowLinePY = ROOT.TLine()
+                    overFlowLinePY.SetLineWidth(2)
+                    overFlowLinePY.SetLineStyle(ROOT.kDashed)
+                    overFlowLinePY.DrawLine(overFlowLocPY, 0.000001, overFlowLocPY, max_valuePY*100)
                     savePath = outDir+"/"+keyname2+"_"+cutTag+".png"
                     os.makedirs(os.path.dirname(savePath), exist_ok=True)
                     canvasPY.SaveAs(savePath)
