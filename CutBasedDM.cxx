@@ -42,6 +42,7 @@
 // v20b: Fix the arrays used to get the cutflows for reduced HCAL
 // v21: What about 6+1 modules?
 // v22: It really should just be module 7 if the strips are 23 > strips > 16
+// v23: Prototype has 3 modules, so additional 24 layers with the strips constrains
 
 class CutBasedDM : public framework::Analyzer {
 public:
@@ -541,12 +542,12 @@ void CutBasedDM::analyze(const framework::Event& event) {
 
     if (id.section() == ldmx::HcalID::BACK && pe > hcalBackMaxPE) {
       hcalBackMaxPE = pe;
-      // first 6+1 modules:
-      // One module has 8 layers, so I think the layers would be 1->48+8
-      // Last module (layers 49-56) requires strip within 16 < strip < 23
+      // first 6+3 modules:
+      // One module has 8 layers, so I think the layers would be 1->48
+      // Last 3 modules (layers 49-72) requires strip within 16 < strip < 23
       if (id.layer() <= 48) {
         hcalReducedMaxPE = pe;
-      } else if (id.layer() <= 56 && id.strip() > 16 && id.strip() < 23) {
+      } else if (id.layer() <= 72 && id.strip() > 16 && id.strip() < 23) {
         hcalReducedMaxPE = pe;
       }
       if (id.layer() <= 48) {
