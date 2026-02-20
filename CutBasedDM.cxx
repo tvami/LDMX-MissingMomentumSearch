@@ -41,6 +41,7 @@
 // v20: Add more HCAL histograms with different module requirements, SimParticle recoil info for remaining event
 // v20b: Fix the arrays used to get the cutflows for reduced HCAL
 // v21: What about 6+1 modules?
+// v22: It really should just be module 7 if the strips are 23 > strips > 16
 
 class CutBasedDM : public framework::Analyzer {
 public:
@@ -542,7 +543,10 @@ void CutBasedDM::analyze(const framework::Event& event) {
       hcalBackMaxPE = pe;
       // first 6+1 modules:
       // One module has 8 layers, so I think the layers would be 1->48+8
-      if (id.layer() <= 56) {
+      // Last module (layers 49-56) requires strip within 16 < strip < 23
+      if (id.layer() <= 48) {
+        hcalReducedMaxPE = pe;
+      } else if (id.layer() <= 56 && id.strip() > 16 && id.strip() < 23) {
         hcalReducedMaxPE = pe;
       }
       if (id.layer() <= 48) {
