@@ -1,0 +1,12 @@
+# analysis output histograms
+analysis/
+analysis_*/
+
+# compareCutflow / overlayCutflow plot directories
+Compare*/
+
+# library compiled on the fly by ldmxcfg.Analyzer.from_file
+*.so
+
+# ROOT files are data, not code
+*.root
