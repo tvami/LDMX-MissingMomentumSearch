@@ -450,8 +450,13 @@ void CutBasedDM::analyze(const framework::Event& event) {
   // Compute recoil track pT
   float recoilTrackPt{-9999.};
   if (recoilTrackCollection.size() == 1) {
-    auto trk_mom = recoilTrackCollection[0].getMomentum();
-    recoilTrackPt = 1000 * std::sqrt(trk_mom[1] * trk_mom[1] + trk_mom[2] * trk_mom[2]);
+    // v4.8.x: Track::getMomentum() now needs a TrackStateType; the
+    // AtTarget state is the closest equivalent of the old momentum_.
+    // Only feeds histograms (RecoilTrackPT*), never a cutflow decision.
+    auto trk_mom = recoilTrackCollection[0].getMomentumAtTarget();
+    if (trk_mom.size() == 3) {
+      recoilTrackPt = 1000 * std::sqrt(trk_mom[1] * trk_mom[1] + trk_mom[2] * trk_mom[2]);
+    }
   }
 
 
