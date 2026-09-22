@@ -46,7 +46,7 @@ for i in range(0, fileIn.GetListOfKeys().GetEntries()):
           tex3.SetTextSize(0.0485)
           tex3.SetLineWidth(2)
           
-          tex4 = ROOT.TLatex(0.64,0.92,"Xe13 EOT (8 GeV)")
+          tex4 = ROOT.TLatex(0.57,0.92,"1.5#times10^{14} EOT (8 GeV)")
           tex4.SetNDC()
           tex4.SetTextFont(52)
           tex4.SetTextSize(0.03)
