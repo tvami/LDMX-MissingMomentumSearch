@@ -4,7 +4,44 @@ from optparse import OptionParser
 parser = OptionParser(usage="Usage: python3 %prog [options] sample.txt")
 parser.add_option("-c", "--cut", dest="cut", default="Triggerred",
                   help="Bin label to project after (default: Triggerred). E.g. 'ECal veto', Triggerred")
+parser.add_option("-e", "--eot", dest="eot", action="store_true", default=False,
+                  help="Normalize backgrounds to TARGET_EOT instead of unit area. "
+                       "Unit-area normalization makes an EoT factor a no-op, so this "
+                       "switches backgrounds to absolute counts. Signal has no EoT "
+                       "normalization (yield scales with epsilon^2) and stays unit area.")
 (opt,args) = parser.parse_args()
+
+# EoT equivalent of each production, keyed on a filename substring.
+TARGET_EOT = 1.5e14
+SAMPLE_EOT = {
+    "ecal_pn":       1.5e14,
+    "target_pn":     1.0e15,
+    "target_conv":   1.0e15,
+    "ecal_conv":     1.0e15,
+}
+# fraction of each sample actually reconstructed, so survivors are scaled up
+PRES = "/sdf/data/ldmx/private_production/mc26/pres_skim/"
+RECO = "/sdf/data/ldmx/private_production/mc26/reco_v492/"
+_SUBDIR = {
+    "ecal_pn":     "ecal_pn_v15_8gev",
+    "target_pn":   "target_pn_v15_8gev",
+    "target_conv": "target_conversion_v15_8gev",
+    "ecal_conv":   "ecal_conversion_v15_8gev",
+}
+
+def eot_weight(fname):
+    """Weight to put a background at TARGET_EOT, or None for signal."""
+    import glob
+    for key, samp_eot in SAMPLE_EOT.items():
+        if key in fname:
+            w = TARGET_EOT / samp_eot
+            sub = _SUBDIR[key]
+            ni = len(glob.glob(PRES + sub + "/*.root"))
+            no = len(glob.glob(RECO + sub + "/*_reco.root"))
+            if ni and no:
+                w *= float(ni) / no
+            return w
+    return None
 
 def addOverflow(h):
     """Add overflow bin content to the last visible bin."""
@@ -71,7 +108,7 @@ for i in range(0, fileInArray[0].GetListOfKeys().GetEntries()):
           tex2.SetLineWidth(2)
 
 
-          tex3 = ROOT.TLatex(0.31,0.92,"Simulation Internal"); # for square plots
+          tex3 = ROOT.TLatex(0.31,0.92,"Simulation"); # for square plots
           tex3.SetNDC()
           tex3.SetTextFont(52)
           tex3.SetTextSize(0.04)
@@ -256,9 +293,9 @@ for i in range(0, fileInArray[0].GetListOfKeys().GetEntries()):
                 legend.SetNColumns(2)
                 
                 histoArray = []
-                colors = [ROOT.kBlack, ROOT.kRed, ROOT.kBlue, ROOT.kGreen+2,
-                          ROOT.kMagenta, ROOT.kCyan+1, ROOT.kOrange+1, ROOT.kViolet,
-                          ROOT.kTeal+2, ROOT.kPink+1]
+                colors = [ROOT.kRed, ROOT.kGreen, ROOT.kBlue, ROOT.kYellow,
+                          ROOT.kMagenta, ROOT.kCyan, ROOT.kGreen+2, ROOT.kBlue-7,
+                          ROOT.kGray+1, ROOT.kPink+1]
                 # fake index to satisfy ROOT memory allocation
                 i = 0
                 for fileIn in fileInArray:
@@ -283,7 +320,11 @@ for i in range(0, fileInArray[0].GetListOfKeys().GetEntries()):
                     addOverflow(PostCutHisto)
 
                   if (PostCutHisto.Integral()> 0 and not "TrigEff" in keyname and not isCutFlow) :
-                    PostCutHisto.Scale(1/PostCutHisto.Integral(1,PostCutHisto.GetNbinsX()+1))
+                    _w = eot_weight(SamplesArray[i]) if opt.eot else None
+                    if _w is not None:
+                      PostCutHisto.Scale(_w)
+                    else:
+                      PostCutHisto.Scale(1/PostCutHisto.Integral(1,PostCutHisto.GetNbinsX()+1))
                   isSignal = any(s in SamplesArray[i] for s in ["MeV", "0.001", "0.01", "0.1", "p1"])
                   if (PostCutHisto.GetBinContent(1)>0 and isCutFlow and cutFlowNorm) :
                     if isSignal and PostCutHisto.GetBinContent(2)>0:
@@ -347,7 +388,11 @@ for i in range(0, fileInArray[0].GetListOfKeys().GetEntries()):
                   for index2 in range(0, len(histoArray)):
                     if not (histoArray[index2]) : continue
                     max_value = numpy.maximum(max_value,histoArray[index2].GetMaximum())
-                  if cutFlowNorm:
+                  if opt.eot and not isCutFlow and not ("TrigEff" in keyname):
+                    # backgrounds are absolute at TARGET_EOT, signal is unit area
+                    histoArray[0].GetYaxis().SetTitle("Events / bin")
+                    histoArray[0].GetYaxis().SetRangeUser(0.000001, max_value*30)
+                  elif cutFlowNorm:
                     histoArray[0].GetYaxis().SetTitle("Normalized events / bin")
                     histoArray[0].GetYaxis().SetRangeUser(0.000001,3000)
                     if "MaxSector" in keyname:

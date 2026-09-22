@@ -43,6 +43,10 @@
 // v21: What about 6+1 modules?
 // v22: It really should just be module 7 if the strips are 23 > strips > 16
 // v23: Prototype has 3 modules, so additional 24 layers with the strips constrains
+// v25: Add prototype to each module combination
+// v26: ldmx-sw v4.9.2 (iss2142-humberto_bdt). EcalVeto/EcalMipInfo pass name and
+//      the BDT working point are configurable, so the veto can be re-run in the
+//      analysis job with the Humberto BDT (default cut 0.954651)
 
 class CutBasedDM : public framework::Analyzer {
 public:
@@ -65,12 +69,17 @@ public:
   // std::string tagger_track_collection_;
   std::string recoil_track_collection_;
   std::string ecal_veto_pass_name_;
+  std::string ecal_mip_pass_name_;
   std::string preselection_pass_name_;
   /// pass name for HcalVeto/TrackerVeto; needed when an input carries a stale
   /// reco pass alongside the current one, which makes "" ambiguous
   std::string veto_pass_name_;
   /// false when the input has no EcalMipInfo, which disables the MIP veto
   bool has_mip_result_{true};
+  std::string pnet_pass_name_;
+  double pnet_cut_;
+  double bdt_cut_;
+  double bdt_loose_cut_;
   bool fiducial_analysis_;
   bool ignore_fiducial_analysis_;
   bool ignore_tagger_analysis_;
@@ -85,8 +94,13 @@ void CutBasedDM::configure(framework::config::Parameters &ps) {
   track_pass_name_ = ps.getParameter<std::string>("track_pass_name","");
   recoil_track_collection_ = ps.getParameter<std::string>("recoil_track_collection","");
   ecal_veto_pass_name_ = ps.getParameter<std::string>("ecal_veto_pass_name","");
+  ecal_mip_pass_name_ = ps.getParameter<std::string>("ecal_mip_pass_name","");
   preselection_pass_name_ = ps.getParameter<std::string>("preselection_pass_name","ecal_pres");
   veto_pass_name_ = ps.getParameter<std::string>("veto_pass_name","");
+  pnet_pass_name_ = ps.getParameter<std::string>("pnet_pass_name","");
+  pnet_cut_ = ps.getParameter<double>("pnet_cut", 0.74);
+  bdt_cut_ = ps.getParameter<double>("bdt_cut", 0.954651);
+  bdt_loose_cut_ = ps.getParameter<double>("bdt_loose_cut", 0.9);
   fiducial_analysis_ = ps.getParameter<bool>("fiducial_analysis");
   ignore_fiducial_analysis_ = ps.getParameter<bool>("ignore_fiducial_analysis");
   ignore_tagger_analysis_ = ps.getParameter<bool>("ignore_tagger_analysis",false);
@@ -174,14 +188,19 @@ void CutBasedDM::onProcessStart(){
   histograms_.create("Hcal_Reduced_MaxPE_Upto6Modules", "", 20, -0.5, 19.5, "Reduced HCAL max PE (up to 6 modules)", 65, -0.5, 64.5);
   histograms_.create("Hcal_Reduced_MaxPE_Upto6Modules_Extended", "", 20, -0.5, 19.5, "Reduced HCAL max PE (up to 6 modules)", 120, -0.5, 600.5);
   histograms_.create("Hcal_Reduced_MaxPE_Upto5Modules", "", 20, -0.5, 19.5, "Reduced HCAL max PE (up to 5 modules)", 65, -0.5, 64.5);
+  histograms_.create("Hcal_Reduced_MaxPE_Upto5ModulesPlusProto", "", 20, -0.5, 19.5, "Reduced HCAL max PE (up to 5 modules + proto)", 65, -0.5, 64.5);
   histograms_.create("Hcal_Reduced_MaxPE_Upto5Modules_Extended", "", 20, -0.5, 19.5, "Reduced HCAL max PE (up to 5 modules)", 120, -0.5, 600.5);
   histograms_.create("Hcal_Reduced_MaxPE_Upto4Modules", "", 20, -0.5, 19.5, "Reduced HCAL max PE (up to 4 modules)", 65, -0.5, 64.5);
+  histograms_.create("Hcal_Reduced_MaxPE_Upto4ModulesPlusProto", "", 20, -0.5, 19.5, "Reduced HCAL max PE (up to 4 modules + proto)", 65, -0.5, 64.5);
   histograms_.create("Hcal_Reduced_MaxPE_Upto4Modules_Extended", "", 20, -0.5, 19.5, "Reduced HCAL max PE (up to 4 modules)", 120, -0.5, 600.5);
   histograms_.create("Hcal_Reduced_MaxPE_Upto3Modules", "", 20, -0.5, 19.5, "Reduced HCAL max PE (up to 3 modules)", 65, -0.5, 64.5);
+  histograms_.create("Hcal_Reduced_MaxPE_Upto3ModulesPlusProto", "", 20, -0.5, 19.5, "Reduced HCAL max PE (up to 3 modules + proto)", 65, -0.5, 64.5);
   histograms_.create("Hcal_Reduced_MaxPE_Upto3Modules_Extended", "", 20, -0.5, 19.5, "Reduced HCAL max PE (up to 3 modules)", 120, -0.5, 600.5);
   histograms_.create("Hcal_Reduced_MaxPE_Upto2Modules", "", 20, -0.5, 19.5, "Reduced HCAL max PE (up to 2 modules)", 65, -0.5, 64.5);
+  histograms_.create("Hcal_Reduced_MaxPE_Upto2ModulesPlusProto", "", 20, -0.5, 19.5, "Reduced HCAL max PE (up to 2 modules + proto)", 65, -0.5, 64.5);
   histograms_.create("Hcal_Reduced_MaxPE_Upto2Modules_Extended", "", 20, -0.5, 19.5, "Reduced HCAL max PE (up to 2 modules)", 120, -0.5, 600.5);
   histograms_.create("Hcal_Reduced_MaxPE_Upto1Modules", "", 20, -0.5, 19.5, "Reduced HCAL max PE (up to 1 module)", 65, -0.5, 64.5);
+  histograms_.create("Hcal_Reduced_MaxPE_Upto1ModulesPlusProto", "", 20, -0.5, 19.5, "Reduced HCAL max PE (up to 1 module + proto)", 65, -0.5, 64.5);
   histograms_.create("Hcal_Reduced_MaxPE_Upto1Modules_Extended", "", 20, -0.5, 19.5, "Reduced HCAL max PE (up to 1 module)", 120, -0.5, 600.5);
 
   histograms_.create("Hcal_MaxPE", "", 20, -0.5, 19.5, "HCAL max photo-electron hits", 65, -0.5, 64.5);
@@ -198,6 +217,9 @@ void CutBasedDM::onProcessStart(){
 
   histograms_.create("AltCutFlow_RecoilX", "", 18, -0.5, 17.5, "RecoilX @Ecal [mm]", 90, -450.0, 450.0);
   histograms_.create("StdCutFlow_RecoilX", "", 18, -0.5, 17.5, "RecoilX @Ecal [mm]", 90, -450.0, 450.0);
+  // cut-and-count flow on the SHAP-ranked BDT inputs, and the ParticleNet flow
+  histograms_.create("CnCCutFlow_RecoilX", "", 11, -0.5, 10.5, "RecoilX @Ecal [mm]", 90, -450.0, 450.0);
+  histograms_.create("PNetCutFlow_RecoilX", "", 5, -0.5, 4.5, "RecoilX @Ecal [mm]", 90, -450.0, 450.0);
   histograms_.create("StdCutFlowWithTracking_RecoilX", "", 20, -0.5, 19.5, "RecoilX @Ecal [mm]", 90, -450.0, 450.0);
   histograms_.create("BDTCutFlow_RecoilX", "", 18, -0.5, 17.5, "RecoilX @Ecal [mm]", 90, -450.0, 450.0);
   // histograms_.create("LinRegCutFlow_RecoilX", "",  18, -0.5, 17.5, "RecoilX @Ecal [mm]", 90, -450.0, 450.0);
@@ -289,6 +311,18 @@ void CutBasedDM::onProcessStart(){
   setHistLabels("BDTDiscrLog", labels);
   setHistLabels("StdCutFlow_RecoilX", labels);
 
+  std::vector<std::string> labels_cnc = {
+    "All / Acceptance", "Triggerred", "E_{sum} < 3500", "E_{sumTight} < 800",
+    "E_{back} < 250", "N_{hits} < 70", "RMS_{shower} < 110",
+    "E_{cell,max} < 300", "RMS_{Layer,hit} < 5", "N_{straight} < 3",
+    "HCal maxPE < 8"};
+  setHistLabels("CnCCutFlow_RecoilX", labels_cnc);
+
+  std::vector<std::string> labels_pnet = {
+    "All / Acceptance", "Triggerred", "Preselection", "ParticleNet > 0.74",
+    "HCal maxPE < 8"};
+  setHistLabels("PNetCutFlow_RecoilX", labels_pnet);
+
   setHistLabels("RecoilX", labels);
   setHistLabels("RecoilTrackPT", labels);
   setHistLabels("SimRecoilPT", labels);
@@ -300,14 +334,17 @@ void CutBasedDM::onProcessStart(){
   setHistLabels("SPRecoilPAtTarget", labels);
   setHistLabels("SPRecoilTheta", labels);
   setHistLabels("SPRecoilPhi", labels);
-  std::vector<std::string> labels_BDTSplit = {"BDT < 0.99741", "BDT > 0.99741"};
+  // labels follow the configured working points
+  std::string bdt_cut_str = std::to_string(bdt_cut_);
+  std::string bdt_loose_cut_str = std::to_string(bdt_loose_cut_);
+  std::vector<std::string> labels_BDTSplit = {"BDT < " + bdt_cut_str, "BDT > " + bdt_cut_str};
   setHistLabels("RecoilTrackPT_BDTSplit", labels_BDTSplit);
   setHistLabels("RecoilTrackPT_BDTSplit_TrigOnly", labels_BDTSplit);
   setHistLabels("SPRecoilPT_BDTSplit", labels_BDTSplit);
   setHistLabels("SPRecoilPT_BDTSplit_TrigOnly", labels_BDTSplit);
   setHistLabels("SimRecoilPT_BDTSplit", labels_BDTSplit);
   setHistLabels("SimRecoilPT_BDTSplit_TrigOnly", labels_BDTSplit);
-  std::vector<std::string> labels_BDTLooseSplit = {"BDT < 0.99", "BDT > 0.99"};
+  std::vector<std::string> labels_BDTLooseSplit = {"BDT < " + bdt_loose_cut_str, "BDT > " + bdt_loose_cut_str};
   setHistLabels("RecoilTrackPT_BDTLooseSplit", labels_BDTLooseSplit);
   setHistLabels("RecoilTrackPT_BDTLooseSplit_TrigOnly", labels_BDTLooseSplit);
   setHistLabels("SPRecoilPT_BDTLooseSplit", labels_BDTLooseSplit);
@@ -321,14 +358,19 @@ void CutBasedDM::onProcessStart(){
   setHistLabels("Hcal_Reduced_MaxPE_Upto6Modules", labels);
   setHistLabels("Hcal_Reduced_MaxPE_Upto6Modules_Extended", labels);
   setHistLabels("Hcal_Reduced_MaxPE_Upto5Modules", labels);
+  setHistLabels("Hcal_Reduced_MaxPE_Upto5ModulesPlusProto", labels);
   setHistLabels("Hcal_Reduced_MaxPE_Upto5Modules_Extended", labels);
   setHistLabels("Hcal_Reduced_MaxPE_Upto4Modules", labels);
+  setHistLabels("Hcal_Reduced_MaxPE_Upto4ModulesPlusProto", labels);
   setHistLabels("Hcal_Reduced_MaxPE_Upto4Modules_Extended", labels);
   setHistLabels("Hcal_Reduced_MaxPE_Upto3Modules", labels);
+  setHistLabels("Hcal_Reduced_MaxPE_Upto3ModulesPlusProto", labels);
   setHistLabels("Hcal_Reduced_MaxPE_Upto3Modules_Extended", labels);
   setHistLabels("Hcal_Reduced_MaxPE_Upto2Modules", labels);
+  setHistLabels("Hcal_Reduced_MaxPE_Upto2ModulesPlusProto", labels);
   setHistLabels("Hcal_Reduced_MaxPE_Upto2Modules_Extended", labels);
   setHistLabels("Hcal_Reduced_MaxPE_Upto1Modules", labels);
+  setHistLabels("Hcal_Reduced_MaxPE_Upto1ModulesPlusProto", labels);
   setHistLabels("Hcal_Reduced_MaxPE_Upto1Modules_Extended", labels);
 
   setHistLabels("Hcal_MaxPE", labels);
@@ -434,10 +476,15 @@ void CutBasedDM::analyze(const framework::Event& event) {
   // Some productions (e.g. the signal reco) never ran EcalMipProcessor. Treat
   // the MIP veto as not applied there rather than throwing on a missing
   // collection; has_mip_result_ is what gates the cut below.
-  has_mip_result_ = event.exists("EcalMipInfo", "");
+  has_mip_result_ = event.exists("EcalMipInfo", ecal_mip_pass_name_);
   ldmx::EcalMipResult mipResult;
   if (has_mip_result_) {
-    mipResult = event.getObject<ldmx::EcalMipResult>("EcalMipInfo","");
+    mipResult = event.getObject<ldmx::EcalMipResult>("EcalMipInfo",ecal_mip_pass_name_);
+  }
+  // EcalPnetVeto is an EcalVetoResult too; -99 disc means it was not produced
+  float pnetDisc{-99.};
+  if (!pnet_pass_name_.empty()) {
+    pnetDisc = event.getObject<ldmx::EcalVetoResult>("EcalPnetVeto",pnet_pass_name_).getDisc();
   }
   auto trigResult{event.getObject<ldmx::TriggerResult>(trigger_collName_, trigger_passName_)};
   auto hcalVeto{event.getObject<ldmx::HcalVetoResult>("HcalVeto",veto_pass_name_)};
@@ -450,8 +497,11 @@ void CutBasedDM::analyze(const framework::Event& event) {
   // Compute recoil track pT
   float recoilTrackPt{-9999.};
   if (recoilTrackCollection.size() == 1) {
-    auto trk_mom = recoilTrackCollection[0].getMomentum();
-    recoilTrackPt = 1000 * std::sqrt(trk_mom[1] * trk_mom[1] + trk_mom[2] * trk_mom[2]);
+    // v4.9.x: track state momentum is MeV in the LDMX frame (beam along z)
+    auto trk_mom = recoilTrackCollection[0].getMomentumAtTarget();
+    if (trk_mom.size() == 3) {
+      recoilTrackPt = std::sqrt(trk_mom[0] * trk_mom[0] + trk_mom[1] * trk_mom[1]);
+    }
   }
 
 
@@ -517,6 +567,11 @@ void CutBasedDM::analyze(const framework::Event& event) {
   float hcalReducedMaxPE_Upto3Modules{-9999};
   float hcalReducedMaxPE_Upto2Modules{-9999};
   float hcalReducedMaxPE_Upto1Modules{-9999};
+  float hcalReducedMaxPE_Upto5ModulesPlusProto{-9999};
+  float hcalReducedMaxPE_Upto4ModulesPlusProto{-9999};
+  float hcalReducedMaxPE_Upto3ModulesPlusProto{-9999};
+  float hcalReducedMaxPE_Upto2ModulesPlusProto{-9999};
+  float hcalReducedMaxPE_Upto1ModulesPlusProto{-9999};
   float hcalMaxTiming{-9999};
   int hcalMaxSector{-1};
   float hcalTotalPe{0};
@@ -563,36 +618,105 @@ void CutBasedDM::analyze(const framework::Event& event) {
       maxPEHit = &hcalHit;
     }
 
-    if (id.section() == ldmx::HcalID::BACK && pe > hcalBackMaxPE) {
-      hcalBackMaxPE = pe;
-      // first 6+3 modules:
-      // One module has 8 layers, so I think the layers would be 1->48
-      // Last 3 modules (layers 49-72) requires strip within 16 < strip < 23
-      if (id.layer() <= 48) {
-        hcalReducedMaxPE = pe;
-      } else if (id.layer() <= 72 && id.strip() > 16 && id.strip() < 23) {
+    if (id.section() == ldmx::HcalID::BACK) {
+      // Global BACK max
+      if (pe > hcalBackMaxPE) {
+        hcalBackMaxPE = pe;
+      }
+
+      // First 6 modules (layers 1–48)
+      if (id.layer() <= 48 && pe > hcalReducedMaxPE) {
         hcalReducedMaxPE = pe;
       }
-      if (id.layer() <= 48) {
+
+      // First 6 modules (layers 1–48) + last 3 modules with strip window (prototype)
+      if (id.layer() <= 72 && id.layer() > 48 &&
+          id.strip() > 16 && id.strip() < 23 &&
+          pe > hcalReducedMaxPE) {
+        hcalReducedMaxPE = pe;
+      }
+
+      // First 6 modules (layers 1–48) w/o prototype
+      if (id.layer() <= 48 && pe > hcalReducedMaxPE_Upto6Modules) {
         hcalReducedMaxPE_Upto6Modules = pe;
       }
-      if (id.layer() <= 40) {
+
+      // First 5 modules (layers 1–40) w/o prototype
+      if (id.layer() <= 40 && pe > hcalReducedMaxPE_Upto5Modules) {
         hcalReducedMaxPE_Upto5Modules = pe;
       }
-      if (id.layer() <= 32) {
+      if (id.layer() <= 40 && pe > hcalReducedMaxPE_Upto5ModulesPlusProto) {
+        hcalReducedMaxPE_Upto5ModulesPlusProto = pe;
+      }
+      // First 5 modules (layers 1–40) + last 3 modules with strip window (prototype)
+      if (id.layer() <= 64 &&
+          id.layer() > 40 &&
+          id.strip() > 16 && id.strip() < 23 &&
+          pe > hcalReducedMaxPE_Upto5ModulesPlusProto) {
+        hcalReducedMaxPE_Upto5ModulesPlusProto = pe;
+      }
+
+      // First 4 modules (layers 1–32)
+      if (id.layer() <= 32 && pe > hcalReducedMaxPE_Upto4Modules) {
         hcalReducedMaxPE_Upto4Modules = pe;
       }
-      if (id.layer() <= 24) {
+      if (id.layer() <= 32 && pe > hcalReducedMaxPE_Upto4ModulesPlusProto) {
+        hcalReducedMaxPE_Upto4ModulesPlusProto = pe;
+      }
+      // First 4 modules (layers 1–32) + last 3 modules with strip window (prototype)
+      if (id.layer() <= 56 &&
+          id.layer() > 32 &&
+          id.strip() > 16 && id.strip() < 23 &&
+          pe > hcalReducedMaxPE_Upto4ModulesPlusProto) {
+        hcalReducedMaxPE_Upto4ModulesPlusProto = pe;
+      }
+
+      // First 3 modules (layers 1–24)
+      if (id.layer() <= 24 && pe > hcalReducedMaxPE_Upto3Modules) {
         hcalReducedMaxPE_Upto3Modules = pe;
       }
-      if (id.layer() <= 16) {
+      if (id.layer() <= 24 && pe > hcalReducedMaxPE_Upto3ModulesPlusProto) {
+        hcalReducedMaxPE_Upto3ModulesPlusProto = pe;
+      }
+      // First 3 modules (layers 1–24) + last 3 modules with strip window (prototype)
+      if (id.layer() <= 48 &&
+          id.layer() > 24 &&
+          id.strip() > 16 && id.strip() < 23 &&
+          pe > hcalReducedMaxPE_Upto3ModulesPlusProto) {
+        hcalReducedMaxPE_Upto3ModulesPlusProto = pe;
+      }
+
+      // First 2 modules (layers 1–16)
+      if (id.layer() <= 16 && pe > hcalReducedMaxPE_Upto2Modules) {
         hcalReducedMaxPE_Upto2Modules = pe;
       }
-      if (id.layer() <= 8) {
+      if (id.layer() <= 16 && pe > hcalReducedMaxPE_Upto2ModulesPlusProto) {
+        hcalReducedMaxPE_Upto2ModulesPlusProto = pe;
+      }
+      // First 2 modules (layers 1–16) + last 3 modules with strip window (prototype)
+      if (id.layer() <= 40 &&
+          id.layer() > 16 &&
+          id.strip() > 16 && id.strip() < 23 && 
+          pe > hcalReducedMaxPE_Upto2ModulesPlusProto) {
+        hcalReducedMaxPE_Upto2ModulesPlusProto = pe;
+      }
+
+      // First module (layers 1–8)
+      if (id.layer() <= 8 && pe > hcalReducedMaxPE_Upto1Modules) {
         hcalReducedMaxPE_Upto1Modules = pe;
       }
-    }
-  }
+      if (id.layer() <= 8 && pe > hcalReducedMaxPE_Upto1ModulesPlusProto) {
+        hcalReducedMaxPE_Upto1ModulesPlusProto = pe;
+      }
+      // First module (layers 1–8) + last 3 modules with strip window (prototype)
+      if (id.layer() <= 32 &&
+          id.layer() > 8 &&
+          id.strip() > 16 && id.strip() < 23 &&
+          pe > hcalReducedMaxPE_Upto1ModulesPlusProto) {
+        hcalReducedMaxPE_Upto1ModulesPlusProto = pe;
+      }
+    } // end of if BACK
+  } // end of loop on hcalRecHits
 
   ldmx::HcalID maxPeId(maxPEHit->getID());
   hcalMaxTiming = maxPEHit->getTime();
@@ -613,7 +737,7 @@ void CutBasedDM::analyze(const framework::Event& event) {
   passedCutsArray[2]  = trigResult.passed();
   passedCutsArray[3]  = preselection;
   passedCutsArray[4]  = trackerVeto.passesVeto();
-  passedCutsArray[5]  = (ecalVeto.getDisc() > 0.99741);
+  passedCutsArray[5]  = (ecalVeto.getDisc() > bdt_cut_);
   passedCutsArray[6]  = has_mip_result_ ? (mipResult.getNStraightTracks() < 3) : true;
   passedCutsArray[7]  = (hcalMaxPE < 8);
 
@@ -761,6 +885,28 @@ void CutBasedDM::analyze(const framework::Event& event) {
   std::copy(std::begin(passedCutsArray), std::end(passedCutsArray), std::begin(passedCutsReduced1));
   passedCutsReduced1[7] = (hcalReducedMaxPE_Upto1Modules < 8);
 
+
+  bool passedCutsReduced5PlusProto[8];
+  std::copy(std::begin(passedCutsArray), std::end(passedCutsArray), std::begin(passedCutsReduced5PlusProto));
+  passedCutsReduced5PlusProto[7] = (hcalReducedMaxPE_Upto5ModulesPlusProto < 8);
+
+  bool passedCutsReduced4PlusProto[8];
+  std::copy(std::begin(passedCutsArray), std::end(passedCutsArray), std::begin(passedCutsReduced4PlusProto));
+  passedCutsReduced4PlusProto[7] = (hcalReducedMaxPE_Upto4ModulesPlusProto < 8);
+
+  bool passedCutsReduced3PlusProto[8];
+  std::copy(std::begin(passedCutsArray), std::end(passedCutsArray), std::begin(passedCutsReduced3PlusProto));
+  passedCutsReduced3PlusProto[7] = (hcalReducedMaxPE_Upto3ModulesPlusProto < 8);
+
+  bool passedCutsReduced2PlusProto[8];
+  std::copy(std::begin(passedCutsArray), std::end(passedCutsArray), std::begin(passedCutsReduced2PlusProto));
+  passedCutsReduced2PlusProto[7] = (hcalReducedMaxPE_Upto2ModulesPlusProto < 8);
+
+  bool passedCutsReduced1PlusProto[8];
+  std::copy(std::begin(passedCutsArray), std::end(passedCutsArray), std::begin(passedCutsReduced1PlusProto));
+  passedCutsReduced1PlusProto[7] = (hcalReducedMaxPE_Upto1ModulesPlusProto < 8);
+  
+
   for (size_t i = 0; i < 8; i++) {
     auto allPassed = [&](bool* arr, size_t idx) {
       for (size_t j = 0; j <= idx; j++) { if (!arr[j]) return false; }
@@ -798,16 +944,31 @@ void CutBasedDM::analyze(const framework::Event& event) {
       histograms_.fill("Hcal_Reduced_MaxPE_Upto1Modules", i, hcalReducedMaxPE_Upto1Modules);
       histograms_.fill("Hcal_Reduced_MaxPE_Upto1Modules_Extended", i, hcalReducedMaxPE_Upto1Modules);
     }
+    if (allPassed(passedCutsReduced5PlusProto, i)) {
+      histograms_.fill("Hcal_Reduced_MaxPE_Upto5ModulesPlusProto", i, hcalReducedMaxPE_Upto5ModulesPlusProto);
+    }
+    if (allPassed(passedCutsReduced4PlusProto, i)) {
+      histograms_.fill("Hcal_Reduced_MaxPE_Upto4ModulesPlusProto", i, hcalReducedMaxPE_Upto4ModulesPlusProto);
+    }
+    if (allPassed(passedCutsReduced3PlusProto, i)) {
+      histograms_.fill("Hcal_Reduced_MaxPE_Upto3ModulesPlusProto", i, hcalReducedMaxPE_Upto3ModulesPlusProto);
+    }
+    if (allPassed(passedCutsReduced2PlusProto, i)) {
+      histograms_.fill("Hcal_Reduced_MaxPE_Upto2ModulesPlusProto", i, hcalReducedMaxPE_Upto2ModulesPlusProto);
+    }
+    if (allPassed(passedCutsReduced1PlusProto, i)) {
+      histograms_.fill("Hcal_Reduced_MaxPE_Upto1ModulesPlusProto", i, hcalReducedMaxPE_Upto1ModulesPlusProto);
+    }
   }
 
   // BDT split plots (0.99741), after cuts 0-4 (up to TrackerVeto)
   if (passedCutsArray[0] && passedCutsArray[1] && passedCutsArray[2] &&
       passedCutsArray[3] && passedCutsArray[4]) {
-    int bdtBin = (ecalVeto.getDisc() > 0.99741) ? 1 : 0;
+    int bdtBin = (ecalVeto.getDisc() > bdt_cut_) ? 1 : 0;
     histograms_.fill("RecoilTrackPT_BDTSplit", bdtBin, recoilTrackPt);
     histograms_.fill("SPRecoilPT_BDTSplit", bdtBin, spPTAtTarget);
     histograms_.fill("SimRecoilPT_BDTSplit", bdtBin, simPT);
-    int bdtBin99 = (ecalVeto.getDisc() > 0.99) ? 1 : 0;
+    int bdtBin99 = (ecalVeto.getDisc() > bdt_loose_cut_) ? 1 : 0;
     histograms_.fill("RecoilTrackPT_BDTLooseSplit", bdtBin99, recoilTrackPt);
     histograms_.fill("SPRecoilPT_BDTLooseSplit", bdtBin99, spPTAtTarget);
     histograms_.fill("SimRecoilPT_BDTLooseSplit", bdtBin99, simPT);
@@ -815,14 +976,46 @@ void CutBasedDM::analyze(const framework::Event& event) {
 
   // BDT split plots, after trigger only (cuts 0-2)
   if (passedCutsArray[0] && passedCutsArray[1] && passedCutsArray[2]) {
-    int bdtBin = (ecalVeto.getDisc() > 0.99741) ? 1 : 0;
+    int bdtBin = (ecalVeto.getDisc() > bdt_cut_) ? 1 : 0;
     histograms_.fill("RecoilTrackPT_BDTSplit_TrigOnly", bdtBin, recoilTrackPt);
     histograms_.fill("SPRecoilPT_BDTSplit_TrigOnly", bdtBin, spPTAtTarget);
     histograms_.fill("SimRecoilPT_BDTSplit_TrigOnly", bdtBin, simPT);
-    int bdtBin99 = (ecalVeto.getDisc() > 0.99) ? 1 : 0;
+    int bdtBin99 = (ecalVeto.getDisc() > bdt_loose_cut_) ? 1 : 0;
     histograms_.fill("RecoilTrackPT_BDTLooseSplit_TrigOnly", bdtBin99, recoilTrackPt);
     histograms_.fill("SPRecoilPT_BDTLooseSplit_TrigOnly", bdtBin99, spPTAtTarget);
     histograms_.fill("SimRecoilPT_BDTLooseSplit_TrigOnly", bdtBin99, simPT);
+  }
+
+  // cut-and-count flow: sequential cuts on the SHAP-ranked BDT input variables
+  bool cnc[11];
+  cnc[0]  = acceptance;
+  cnc[1]  = trigResult.passed();
+  cnc[2]  = (ecalVeto.getSummedDet() < 3500.);
+  cnc[3]  = (ecalVeto.getSummedTightIso() < 800.);
+  cnc[4]  = (ecalVeto.getEcalBackEnergy() < 250.);
+  cnc[5]  = (ecalVeto.getNReadoutHits() < 70);
+  cnc[6]  = (ecalVeto.getShowerRMS() < 110.);
+  cnc[7]  = (ecalVeto.getMaxCellDep() < 300.);
+  cnc[8]  = (ecalVeto.getStdLayerHit() < 5.);
+  cnc[9]  = has_mip_result_ ? (mipResult.getNStraightTracks() < 3) : true;
+  cnc[10] = (hcalMaxPE < 8);
+  for (size_t i=0;i<11;i++) {
+    bool ok = true;
+    for (size_t j=0;j<=i;j++) { if (!cnc[j]) { ok = false; break; } }
+    if (ok) histograms_.fill("CnCCutFlow_RecoilX", i, ecalVeto.getRecoilX());
+  }
+
+  // ParticleNet flow; its preselection is the looser pnet one, not ecal_pres
+  bool pnet[5];
+  pnet[0] = acceptance;
+  pnet[1] = trigResult.passed();
+  pnet[2] = (ecalVeto.getNReadoutHits() < 90 && ecalVeto.getSummedTightIso() < 1100.);
+  pnet[3] = (pnetDisc > pnet_cut_);
+  pnet[4] = (hcalMaxPE < 8);
+  for (size_t i=0;i<5;i++) {
+    bool ok = true;
+    for (size_t j=0;j<=i;j++) { if (!pnet[j]) { ok = false; break; } }
+    if (ok) histograms_.fill("PNetCutFlow_RecoilX", i, ecalVeto.getRecoilX());
   }
 
   // All other cutflows now use the same 8-bin structure
@@ -881,7 +1074,7 @@ void CutBasedDM::analyze(const framework::Event& event) {
   passedCutsArrayReverse[2]  = trigResult.passed();
   passedCutsArrayReverse[3]  = (hcalMaxPE < 8);
   passedCutsArrayReverse[4]  = has_mip_result_ ? (mipResult.getNStraightTracks() < 3) : true;
-  passedCutsArrayReverse[5]  = (ecalVeto.getDisc() > 0.99741);
+  passedCutsArrayReverse[5]  = (ecalVeto.getDisc() > bdt_cut_);
   passedCutsArrayReverse[6]  = trackerVeto.passesVeto();
   passedCutsArrayReverse[7]  = preselection;
 
