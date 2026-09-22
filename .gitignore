@@ -10,3 +10,6 @@ Compare*/
 
 # ROOT files are data, not code
 *.root
+
+# scratch inputs for interactive unit tests
+unittest/
