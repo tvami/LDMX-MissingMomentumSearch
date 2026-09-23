@@ -9,8 +9,8 @@ BASE=/sdf/data/ldmx/private_production/mc26/reco_v492
 NPAR=${NPAR:-16}
 SLEEP=${SLEEP:-20}
 MEM=${MEM:-8000}
-MASSES=${MASSES:-"1.0 0.1 0.01 0.001"}
-SAMPLES=${SAMPLES:-"target_pn_v15_8gev target_conversion_v15_8gev ecal_conversion_v15_8gev ecal_pn_v15_8gev"}
+MASSES=${MASSES-"1.0 0.1 0.01 0.001"}
+SAMPLES=${SAMPLES-"target_pn_v15_8gev target_conversion_v15_8gev ecal_conversion_v15_8gev ecal_pn_v15_8gev"}
 
 for m in $MASSES ; do
   python3 ../submit_sdf_mt_input.py -py $CFG -i $BASE/signal_v15_8gev/$m \

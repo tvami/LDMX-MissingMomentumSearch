@@ -38,6 +38,12 @@ signal = "signal" in fileName
 # matches EcalVetoProcessor.disc_cut on iss2142-humberto_bdt
 BDT_CUT = 0.954651
 
+# ParticleNet costs ~65 ms/event, which dominates everything else. Only the
+# ParticleNet table needs it, and that table has a single background column
+# (ECal PN), so run it selectively. With RUN_PNET=0 the PNet cutflow is simply
+# left empty; every other cutflow is unaffected.
+RUN_PNET = os.environ.get('RUN_PNET', '1') != '0'
+
 cutBasedAna = ldmxcfg.processor_from_file(
     'CutBasedDM.cxx',
     needs=['Ecal_Event', 'Hcal_Event', 'Recon_Event', 'SimCore_Event', 'Tracking_Event'],
@@ -51,18 +57,20 @@ cutBasedAna = ldmxcfg.processor_from_file(
     ecal_veto_pass_name='reco',
     ecal_mip_pass_name='reco',
     preselection_pass_name='reco',
-    pnet_pass_name='analysis',
+    pnet_pass_name='analysis' if RUN_PNET else '',
     pnet_cut=0.74,
     bdt_cut=BDT_CUT,
     bdt_loose_cut=0.9,
 )
 
-# ParticleNet was dropped from the slim reco, so re-run it here
-pnetVeto = EcalPnetVetoProcessor(
-    ecal_rec_hits_passname='sim',
-    ecal_sp_hits_passname='sim',
-    track_pass_name='reco',
-)
-
 p.log_frequency = 1000
-p.sequence = [pnetVeto, cutBasedAna]
+if RUN_PNET:
+    # ParticleNet was dropped from the slim reco, so re-run it here
+    pnetVeto = EcalPnetVetoProcessor(
+        ecal_rec_hits_passname='sim',
+        ecal_sp_hits_passname='sim',
+        track_pass_name='reco',
+    )
+    p.sequence = [pnetVeto, cutBasedAna]
+else:
+    p.sequence = [cutBasedAna]

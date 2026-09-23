@@ -15,7 +15,7 @@ hadd_sample () {   # $1 = subdir under analysis/, $2 = output stem
   if [ "$n" -eq 0 ]; then echo "  $stem: no inputs, skipped"; return; fi
   rm -f $A/${stem}_histos.root
   if [ "$n" -le 400 ]; then
-    denv hadd -f -j 8 $A/${stem}_histos.root @$list >/dev/null 2>&1
+    denv hadd -f -j 8 $A/${stem}_histos.root @$list >/dev/null 2>$A/tmp/${stem}.err || echo "  $stem: HADD FAILED, see $A/tmp/${stem}.err"
   else
     # two-stage: chunks of 400, then merge the chunks
     rm -rf $A/tmp/$stem; mkdir -p $A/tmp/$stem
@@ -23,7 +23,7 @@ hadd_sample () {   # $1 = subdir under analysis/, $2 = output stem
     for part in $A/tmp/$stem/part_*; do
       denv hadd -f -j 8 ${part}.root @${part} >/dev/null 2>&1
     done
-    denv hadd -f -j 8 $A/${stem}_histos.root $A/tmp/$stem/part_*.root >/dev/null 2>&1
+    denv hadd -f -j 8 $A/${stem}_histos.root $A/tmp/$stem/part_*.root >/dev/null 2>$A/tmp/${stem}.err || echo "  $stem: HADD FAILED, see $A/tmp/${stem}.err"
   fi
   echo "  $stem: merged $n files -> $A/${stem}_histos.root"
 }
