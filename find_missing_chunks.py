@@ -18,7 +18,7 @@ ROOT.gROOT.SetBatch(True)
 ROOT.gErrorIgnoreLevel = ROOT.kFatal
 
 
-def usable(path):
+def usable(path, dname='CutBasedDM'):
     """A histogram file counts only if it actually holds histograms.
 
     A job that is killed or hangs leaves a ~500 byte file that exists and is
@@ -30,22 +30,47 @@ def usable(path):
     f = ROOT.TFile.Open(path)
     if not f or f.IsZombie():
         return False
-    d = f.Get('CutBasedDM')
+    d = f.Get(dname)
     ok = bool(d) and d.GetListOfKeys().GetEntries() > 0
     f.Close()
     return ok
 
 RECO = '/sdf/data/ldmx/private_production/mc26/reco_v492/'
-ANA = 'analysis/'
+
+
+def ana_dir(argv):
+    """Which output tree to check: analysis is the v10 PNet run, analysis_pnetv11 the v11 one.
+
+    Taken from "--ana DIR" on the command line and NOT from the environment:
+    denv runs this inside the container with denv_env_var_copy_all="false", so
+    an exported variable never arrives and the default silently wins. That
+    happened once and reported the v10 tree's chunks as the v11 run's progress.
+    The directory is echoed on every run so the log always says which tree it is.
+    """
+    d = 'analysis'
+    if '--ana' in argv:
+        i = argv.index('--ana')
+        d = argv[i + 1]
+        del argv[i:i + 2]
+    sys.stderr.write('reading histograms from %s/\n' % d)
+    return d + '/'
 # must match the -f given to submit_sdf_mt_input.py: 20 for the backgrounds,
 # 10 for signal. Getting this wrong mis-identifies which chunks are missing.
 FILES_PER_TASK = 20
 
 
 def main():
+    ANA = ana_dir(sys.argv)
+    # analyzer directory inside the file, e.g. CnCNtuple
+    dname = 'CutBasedDM'
+    if '--dir' in sys.argv:
+        i = sys.argv.index('--dir')
+        dname = sys.argv[i + 1]
+        del sys.argv[i:i + 2]
+    sys.stderr.write('checking directory %s\n' % dname)
     sample = sys.argv[1]
     per_task = int(sys.argv[2]) if len(sys.argv) > 2 else FILES_PER_TASK
-    outdir = sys.argv[3] if len(sys.argv) > 3 else '/sdf/home/t/tamasvami/slurm/filelists/ana492_recover'
+    outdir = sys.argv[3] if len(sys.argv) > 3 else '/sdf/group/ldmx/users/tamasvami/slurm/filelists/ana492_recover'
     os.makedirs(outdir, exist_ok=True)
     for f in glob.glob(outdir + '/*.txt'):
         os.remove(f)
@@ -57,7 +82,7 @@ def main():
     for c in chunks:
         histo = os.path.join(ANA, sample,
                              os.path.basename(c[-1])[:-5] + '_histo.root')
-        if usable(histo):
+        if usable(histo, dname):
             present += 1
         else:
             missing.append(c)

@@ -4,7 +4,8 @@
 # on argv, and -j keeps it from being the slow step.
 export PATH=/sdf/home/t/tamasvami/.local/bin:$PATH
 cd /sdf/group/ldmx/users/tamasvami/ldmx-analysis/v4.9.2/ldmx-sw/LDMX-MissingMomentumSearch || exit 1
-A=analysis
+# ANA_DIR selects the output tree: analysis is the v10 PNet run, analysis_pnetv11 the v11 one
+A=${ANA_DIR:-analysis}
 mkdir -p $A/tmp
 
 hadd_sample () {   # $1 = subdir under analysis/, $2 = output stem
