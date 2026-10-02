@@ -40,6 +40,20 @@ OUT = sys.argv[2] if len(sys.argv) > 2 else \
     '/sdf/group/ldmx/users/tamasvami/ldmx-analysis/presentation_cnc_pnet_v15/plots_cnc_pnet'
 BKG_MODE = sys.argv[3] if len(sys.argv) > 3 else st.BKG_MODE
 CUT = 0.5664
+# tree whose PNetDisc is filled after the ECal hit requirement, for the dashed
+# curves of the working-point plot; "--hit-tree DIR", a flag since denv drops env vars
+HIT_TREE = 'analysis_aligned'
+if '--hit-tree' in sys.argv:
+    _i = sys.argv.index('--hit-tree')
+    HIT_TREE = sys.argv[_i + 1]
+    del sys.argv[_i:_i + 2]
+    # positional args were read above, so re-read them without the flag
+    ANA = sys.argv[1] if len(sys.argv) > 1 else ANA
+    OUT = sys.argv[2] if len(sys.argv) > 2 else OUT
+    BKG_MODE = sys.argv[3] if len(sys.argv) > 3 else BKG_MODE
+# the floor is ~1.2e4, the hit-required curves reach ~12: span both, with room
+# above for the legend
+WP_YMIN, WP_YMAX = 3.0, 3e9
 # house unit-area range, the same one style_axes applies
 YMIN, YMAX = 1e-6, 3000.0
 # ECal PN: 1.5e14 EoT sample, coverage 6172/5921
@@ -138,75 +152,89 @@ def plot_disc():
 def plot_workingpoint():
     """ECal PN events surviving the PNet cut vs signal efficiency, cut scanned.
 
-    Pending the re-run: section 4.2 of the restyle plan replaces the saturation
-    claim with the zero-ECal-hit explanation and adds a second curve set, so the
-    restyle happens then.
+    Two curve sets, before the HCal veto:
+      solid   as reconstructed (ANA), which flattens at ~1.2e4 events: the
+              events with no ECal readout hits, which sit at disc = 1 exactly
+      dashed  with at least one ECal hit required (HIT_TREE, whose PNetDisc is
+              filled after the hit requirement), where the floor is gone
+    House style: square canvas, stamps, legend from ldmx_plot_style.
     """
-    hb = get(BKG[0])
-    sig = {lab: get(stem) for stem, lab, _ in SIGS}
+    def curves(tree):
+        f = ROOT.TFile.Open('%s/%s_histos.root' % (tree, BKG[0]))
+        hb = f.Get('CutBasedDM').Get('PNetDisc').Clone('wp_bkg_' + tree)
+        hb.SetDirectory(0)
+        f.Close()
+        sig = {}
+        for stem, lab, _ in SIGS:
+            f = ROOT.TFile.Open('%s/%s_histos.root' % (tree, stem))
+            h = f.Get('CutBasedDM').Get('PNetDisc').Clone('wp_%s_%s' % (stem, tree))
+            h.SetDirectory(0)
+            f.Close()
+            sig[lab] = h
+        return hb, sig
 
-    c = ROOT.TCanvas('c2', '', 900, 650)
-    c.SetLogy()
-    c.SetLeftMargin(0.13)
-    c.SetBottomMargin(0.13)
-    c.SetRightMargin(0.05)
-    c.SetTopMargin(0.08)
+    c = st.canvas('cPNetWP')
+    frame = ROOT.TH1F('frameWP', '', 100, 0.0, 100.0)
+    st.style_axes(frame, 'signal efficiency after loose preselection [%]',
+                  ytitle='ECal PN events, before the HCal veto',
+                  ymin=WP_YMIN, ymax=WP_YMAX)
+    frame.Draw('AXIS')
 
-    graphs = []
-    for stem, lab, col in SIGS:
-        g = ROOT.TGraph()
-        h = sig[lab]
-        for i in range(1, hb.GetNbinsX() + 1):
-            cut = hb.GetXaxis().GetBinLowEdge(i)
-            es = eff_above(h, cut)
-            nb = eff_above(hb, cut) * hb.GetEntries() * BKG_SCALE
-            if es > 0 and nb > 0:
-                g.SetPoint(g.GetN(), 100 * es, nb)
-        g.SetLineColor(ROOT.TColor.GetColor(col))
-        g.SetLineWidth(2)
-        g.SetTitle('')
-        graphs.append((g, lab))
-
-    first = True
-    for g, lab in graphs:
-        if first:
-            g.GetXaxis().SetTitle('signal efficiency after loose preselection [%]')
-            g.GetYaxis().SetTitle('ECal PN events at 1.5#times10^{14} EoT')
-            g.GetXaxis().SetTitleSize(0.045)
-            g.GetYaxis().SetTitleSize(0.045)
-            g.GetXaxis().SetLimits(0.0, 100.0)
-            # the curves flatten at the zero-ECal-hit floor near 1.2e4; do not
-            # leave three empty decades under it
-            g.SetMinimum(5e3)
-            g.SetMaximum(3e7)
-            g.Draw('AL')
-            first = False
-        else:
+    keep = [frame]
+    legend_lines = []
+    for tree, lstyle in ((ANA, 1), (HIT_TREE, ROOT.kDashed)):
+        hb, sig = curves(tree)
+        for stem, lab, col in SIGS:
+            g = ROOT.TGraph()
+            h = sig[lab]
+            for i in range(1, hb.GetNbinsX() + 1):
+                cut = hb.GetXaxis().GetBinLowEdge(i)
+                es = eff_above(h, cut)
+                nb = eff_above(hb, cut) * hb.GetEntries() * BKG_SCALE
+                if es > 0 and nb > 0:
+                    g.SetPoint(g.GetN(), 100 * es, nb)
+            g.SetLineColor(ROOT.TColor.GetColor(col))
+            g.SetLineWidth(3)
+            g.SetLineStyle(lstyle)
             g.Draw('L SAME')
+            keep.append(g)
+            if lstyle == 1:
+                legend_lines.append((g, st.label_for(stem)))
+        # the shipped working point on this curve set
+        mk = ROOT.TGraph()
+        for stem, lab, col in SIGS:
+            mk.SetPoint(mk.GetN(), 100 * eff_above(sig[lab], CUT),
+                        eff_above(hb, CUT) * hb.GetEntries() * BKG_SCALE)
+        mk.SetMarkerStyle(20 if lstyle == 1 else 24)
+        mk.SetMarkerSize(1.4)
+        mk.SetMarkerColor(ROOT.kBlack)
+        mk.Draw('P SAME')
+        keep.append(mk)
 
-    # the shipped working point
-    mk = ROOT.TGraph()
-    for stem, lab, col in SIGS:
-        mk.SetPoint(mk.GetN(), 100 * eff_above(sig[lab], CUT),
-                    eff_above(hb, CUT) * hb.GetEntries() * BKG_SCALE)
-    mk.SetMarkerStyle(20)
-    mk.SetMarkerSize(1.3)
-    mk.SetMarkerColor(ROOT.kBlack)
-    mk.Draw('P SAME')
+    # line-style key, in neutral grey so it does not read as another mass
+    key_solid = ROOT.TGraph()
+    key_solid.SetLineColor(ROOT.TColor.GetColor(st.BKG_COLOR))
+    key_solid.SetLineWidth(3)
+    key_dash = key_solid.Clone()
+    key_dash.SetLineStyle(ROOT.kDashed)
+    key_mk = ROOT.TGraph()
+    key_mk.SetMarkerStyle(20)
+    key_mk.SetMarkerSize(1.4)
+    keep += [key_solid, key_dash, key_mk]
 
-    leg = ROOT.TLegend(0.17, 0.66, 0.60, 0.89)
-    leg.SetBorderSize(0)
-    leg.SetFillStyle(0)
-    leg.SetTextSize(0.032)
-    for g, lab in graphs:
-        leg.AddEntry(g, lab, 'l')
-    leg.AddEntry(mk, 'shipped working point', 'p')
-    leg.Draw()
+    leg = st.make_legend(20, y0=st.LEGEND_Y0, x0=st.LEGEND_X0)
+    for g, lab in legend_lines:
+        leg.AddEntry(g, lab, 'L')
+    leg.AddEntry(key_solid, 'as reconstructed', 'L')
+    leg.AddEntry(key_dash, '#geq 1 ECal hit', 'L')
+    leg.AddEntry(key_mk, 'cut 0.5664', 'P')
+    leg.Draw('SAME')
 
-    t = ROOT.TLatex()
-    t.SetNDC()
-    t.SetTextSize(0.033)
-    t.DrawLatex(0.135, 0.935, 'LDMX v15, 8 GeV, before the HCal veto')
+    texts = st.stamps()
+    for t in texts:
+        t.Draw('SAME')
+
+    c.RedrawAxis()
     for ext in ('pdf', 'png'):
         c.SaveAs('%s/pnet_workingpoint.%s' % (OUT, ext))
 

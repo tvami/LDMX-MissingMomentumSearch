@@ -39,6 +39,21 @@ import ldmx_plot_style as st
 
 st.init()
 
+# "--thresholds opt" draws the Punzi-optimized thresholds (a = 3, ECal hits >= 1,
+# scan_out/cnc_punzi_results.json "nhits>=1 a=3") and writes cnc_<Var>Opt.*;
+# the default is the v14 thresholds. A flag, not an env var: denv drops those.
+THR_SET = 'v14'
+if '--thresholds' in sys.argv:
+    _i = sys.argv.index('--thresholds')
+    THR_SET = sys.argv[_i + 1]
+    del sys.argv[_i:_i + 2]
+OPT_THR = {'SummedDet': 5101.6949152542375, 'SummedTightIso': 1600.0,
+           'EcalBackEnergy': 500.0, 'NReadoutHits': 57.0, 'ShowerRMS': 220.0,
+           'MaxCellDep': 600.0, 'StdLayerHit': 10.0, 'Straight': 2.0,
+           'Hcal_MaxPE': 8.0}
+# "none" draws the distributions with no threshold line at all, cnc_<Var>NoCut.*
+SUFFIX = {'opt': 'Opt', 'none': 'NoCut'}.get(THR_SET, '')
+
 ANA = sys.argv[1] if len(sys.argv) > 1 else 'analysis_pnetv11'
 OUT = sys.argv[2] if len(sys.argv) > 2 else 'plots_pnet'
 BKG_MODE = sys.argv[3] if len(sys.argv) > 3 else st.BKG_MODE
@@ -115,9 +130,10 @@ def plot_var(var, cut, xr, title):
     # both markers stop under the legend rather than running through it
     ytop = st.line_top(YMIN, YMAX)
 
-    # the threshold, unlabelled
-    thr = st.dashed_line()
-    thr.DrawLine(cut, YMIN, cut, ytop)
+    # the threshold, unlabelled; left out entirely for the bare distributions
+    if THR_SET != 'none':
+        thr = st.dashed_line()
+        thr.DrawLine(cut, YMIN, cut, ytop)
 
     # where the tail was folded in
     ofx = st.overflow_x(keep[0][0], xr[1])
@@ -134,12 +150,15 @@ def plot_var(var, cut, xr, title):
     # no underscore in the file name: it is read in LaTeX text mode by
     # \includegraphics and would need escaping at every use
     for ext in ('pdf', 'png'):
-        c.SaveAs('%s/cnc_%s.%s' % (OUT, var.replace('_', ''), ext))
+        c.SaveAs('%s/cnc_%s%s.%s' % (OUT, var.replace('_', ''), SUFFIX, ext))
 
 
 def main():
     os.makedirs(OUT, exist_ok=True)
+    sys.stderr.write('thresholds: %s\n' % THR_SET)
     for var, cut, xr, title in VARS:
+        if THR_SET == 'opt':
+            cut = OPT_THR[var]
         plot_var(var, cut, xr, title)
 
 
