@@ -12,10 +12,27 @@ import os
 import sys
 
 RECO = '/sdf/data/ldmx/private_production/mc26/reco_v492/'
-ANA = 'analysis/'
+
+
+def ana_dir(argv):
+    """Which tree to prune, from "--ana DIR", never from the environment.
+
+    denv does not copy env vars into the container, so an exported variable
+    silently leaves the default in place. Pruning the wrong tree with the wrong
+    files-per-task would delete good histograms, so the directory is echoed on
+    every run.
+    """
+    d = 'analysis'
+    if '--ana' in argv:
+        i = argv.index('--ana')
+        d = argv[i + 1]
+        del argv[i:i + 2]
+    sys.stderr.write('pruning in %s/\n' % d)
+    return d + '/'
 
 
 def main():
+    ANA = ana_dir(sys.argv)
     sample, per_task = sys.argv[1], int(sys.argv[2])
     apply_ = '--apply' in sys.argv
 

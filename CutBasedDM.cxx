@@ -77,7 +77,6 @@ public:
   /// false when the input has no EcalMipInfo, which disables the MIP veto
   bool has_mip_result_{true};
   std::string pnet_pass_name_;
-  double pnet_cut_;
   double bdt_cut_;
   double bdt_loose_cut_;
   bool fiducial_analysis_;
@@ -98,7 +97,6 @@ void CutBasedDM::configure(framework::config::Parameters &ps) {
   preselection_pass_name_ = ps.getParameter<std::string>("preselection_pass_name","ecal_pres");
   veto_pass_name_ = ps.getParameter<std::string>("veto_pass_name","");
   pnet_pass_name_ = ps.getParameter<std::string>("pnet_pass_name","");
-  pnet_cut_ = ps.getParameter<double>("pnet_cut", 0.74);
   bdt_cut_ = ps.getParameter<double>("bdt_cut", 0.954651);
   bdt_loose_cut_ = ps.getParameter<double>("bdt_loose_cut", 0.9);
   fiducial_analysis_ = ps.getParameter<bool>("fiducial_analysis");
@@ -220,6 +218,30 @@ void CutBasedDM::onProcessStart(){
   // cut-and-count flow on the SHAP-ranked BDT inputs, and the ParticleNet flow
   histograms_.create("CnCCutFlow_RecoilX", "", 11, -0.5, 10.5, "RecoilX @Ecal [mm]", 90, -450.0, 450.0);
   histograms_.create("PNetCutFlow_RecoilX", "", 5, -0.5, 4.5, "RecoilX @Ecal [mm]", 90, -450.0, 450.0);
+  // disc of every event reaching the PNet cut. v11 saturates at 1, so this is
+  // a check on the saturation, not something to re-cut on
+  histograms_.create("PNetDisc", "ParticleNet disc", 110, -0.05, 1.05);
+  // disc AFTER the HCal veto, so the PNet threshold can be scanned against the
+  // final background yield without re-running. The second one drops events with
+  // no ECal readout hits at all: every cut in both flows is an upper bound, so
+  // those events pass for free, and an empty ECal reads as maximally signal-like
+  histograms_.create("PNetDiscPostHcal", "ParticleNet disc", 110, -0.05, 1.05);
+  histograms_.create("PNetDiscPostHcalWithHit", "ParticleNet disc", 110, -0.05, 1.05);
+  // N_hits at each stage of the two flows, to see what the survivors are made of
+  histograms_.create("PNetCutFlow_NHits", "", 5, -0.5, 4.5, "#Readout hits", 150, -0.5, 149.5);
+  histograms_.create("CnCCutFlow_NHits", "", 11, -0.5, 10.5, "#Readout hits", 150, -0.5, 149.5);
+  // CnC and PNet with the same non-ECal cuts as the BDT flow (hit requirement,
+  // tracker veto, N_straight < 3, HCal veto), so the three compare like for like
+  histograms_.create("CnCAlignedCutFlow_RecoilX", "", 13, -0.5, 12.5, "RecoilX @Ecal [mm]", 90, -450.0, 450.0);
+  histograms_.create("PNetAlignedCutFlow_RecoilX", "", 8, -0.5, 7.5, "RecoilX @Ecal [mm]", 90, -450.0, 450.0);
+  // disc after every other cut of the aligned PNet flow, for a threshold scan;
+  // 0.001 bins, the 0.01 ones cannot resolve a working point near 1
+  histograms_.create("PNetAlignedDiscPostAll", "ParticleNet disc", 1100, -0.05, 1.05);
+  // the aligned flows without the tracker veto; CnC needs no new flow, the
+  // existing CnCCutFlow already has no tracker veto and ends in N_straight, HCal
+  histograms_.create("BDTNoTrkCutFlow_RecoilX", "", 6, -0.5, 5.5, "RecoilX @Ecal [mm]", 90, -450.0, 450.0);
+  histograms_.create("PNetNoTrkCutFlow_RecoilX", "", 7, -0.5, 6.5, "RecoilX @Ecal [mm]", 90, -450.0, 450.0);
+  histograms_.create("PNetNoTrkDiscPostAll", "ParticleNet disc", 1100, -0.05, 1.05);
   histograms_.create("StdCutFlowWithTracking_RecoilX", "", 20, -0.5, 19.5, "RecoilX @Ecal [mm]", 90, -450.0, 450.0);
   histograms_.create("BDTCutFlow_RecoilX", "", 18, -0.5, 17.5, "RecoilX @Ecal [mm]", 90, -450.0, 450.0);
   // histograms_.create("LinRegCutFlow_RecoilX", "",  18, -0.5, 17.5, "RecoilX @Ecal [mm]", 90, -450.0, 450.0);
@@ -319,9 +341,31 @@ void CutBasedDM::onProcessStart(){
   setHistLabels("CnCCutFlow_RecoilX", labels_cnc);
 
   std::vector<std::string> labels_pnet = {
-    "All / Acceptance", "Triggerred", "Preselection", "ParticleNet > 0.74",
+    "All / Acceptance", "Triggerred", "Preselection", "ParticleNet",
     "HCal maxPE < 8"};
   setHistLabels("PNetCutFlow_RecoilX", labels_pnet);
+
+  std::vector<std::string> labels_cnc_aligned = {
+    "All / Acceptance", "Triggerred", "ECal hits >= 1", "Tracker veto",
+    "E_{sum} < 3500", "E_{sumTight} < 800", "E_{back} < 250", "N_{hits} < 70",
+    "RMS_{shower} < 110", "E_{cell,max} < 300", "RMS_{Layer,hit} < 5",
+    "N_{straight} < 3", "HCal maxPE < 8"};
+  setHistLabels("CnCAlignedCutFlow_RecoilX", labels_cnc_aligned);
+
+  std::vector<std::string> labels_pnet_aligned = {
+    "All / Acceptance", "Triggerred", "ECal hits >= 1", "Preselection",
+    "Tracker veto", "ParticleNet", "N_{straight} < 3", "HCal maxPE < 8"};
+  setHistLabels("PNetAlignedCutFlow_RecoilX", labels_pnet_aligned);
+
+  std::vector<std::string> labels_bdt_notrk = {
+    "All / Acceptance", "Triggerred", "Preselection, ECal hits >= 1",
+    "ECal veto (BDT)", "N_{straight} < 3", "HCal maxPE < 8"};
+  setHistLabels("BDTNoTrkCutFlow_RecoilX", labels_bdt_notrk);
+
+  std::vector<std::string> labels_pnet_notrk = {
+    "All / Acceptance", "Triggerred", "ECal hits >= 1", "Preselection",
+    "ParticleNet", "N_{straight} < 3", "HCal maxPE < 8"};
+  setHistLabels("PNetNoTrkCutFlow_RecoilX", labels_pnet_notrk);
 
   setHistLabels("RecoilX", labels);
   setHistLabels("RecoilTrackPT", labels);
@@ -481,10 +525,17 @@ void CutBasedDM::analyze(const framework::Event& event) {
   if (has_mip_result_) {
     mipResult = event.getObject<ldmx::EcalMipResult>("EcalMipInfo",ecal_mip_pass_name_);
   }
-  // EcalPnetVeto is an EcalVetoResult too; -99 disc means it was not produced
+  // EcalPnetVeto is an EcalVetoResult too; -99 disc means it was not produced.
+  // Take the decision from the processor, not from a cut on the disc: PNet v11
+  // cuts on the logit difference because the probability saturates at 1 in
+  // float, and that difference is not stored in the result.
   float pnetDisc{-99.};
+  bool pnetPass{false};
   if (!pnet_pass_name_.empty()) {
-    pnetDisc = event.getObject<ldmx::EcalVetoResult>("EcalPnetVeto",pnet_pass_name_).getDisc();
+    const auto& pnetResult =
+        event.getObject<ldmx::EcalVetoResult>("EcalPnetVeto",pnet_pass_name_);
+    pnetDisc = pnetResult.getDisc();
+    pnetPass = pnetResult.passesVeto();
   }
   auto trigResult{event.getObject<ldmx::TriggerResult>(trigger_collName_, trigger_passName_)};
   auto hcalVeto{event.getObject<ldmx::HcalVetoResult>("HcalVeto",veto_pass_name_)};
@@ -729,13 +780,19 @@ void CutBasedDM::analyze(const framework::Event& event) {
 
   // std::cout << "Fiducial = " << ecalVeto.getFiducial() << std::endl;
 
+  // At least one ECal readout hit, in every flow. ~45 ECal PN sim runs
+  // (240k-249k) lost their ECal rec hits in the original production; an empty
+  // ECal passes every upper-bound cut and reads as signal to ParticleNet.
+  // Folded into an existing step of each flow so the row indices don't move.
+  const bool has_ecal_readout_hit = ecalVeto.getNReadoutHits() > 0;
+
   // CutFlow here
   bool passedCutsArray[8];
   std::fill(std::begin(passedCutsArray), std::end(passedCutsArray),false);
   passedCutsArray[0]  = acceptance;
   passedCutsArray[1]  = (ignore_fiducial_analysis_ || (fiducial_analysis_ && ecalVeto.getFiducial()) || (!fiducial_analysis_ && !ecalVeto.getFiducial()));
   passedCutsArray[2]  = trigResult.passed();
-  passedCutsArray[3]  = preselection;
+  passedCutsArray[3]  = preselection && has_ecal_readout_hit;
   passedCutsArray[4]  = trackerVeto.passesVeto();
   passedCutsArray[5]  = (ecalVeto.getDisc() > bdt_cut_);
   passedCutsArray[6]  = has_mip_result_ ? (mipResult.getNStraightTracks() < 3) : true;
@@ -993,7 +1050,7 @@ void CutBasedDM::analyze(const framework::Event& event) {
   cnc[2]  = (ecalVeto.getSummedDet() < 3500.);
   cnc[3]  = (ecalVeto.getSummedTightIso() < 800.);
   cnc[4]  = (ecalVeto.getEcalBackEnergy() < 250.);
-  cnc[5]  = (ecalVeto.getNReadoutHits() < 70);
+  cnc[5]  = (has_ecal_readout_hit && ecalVeto.getNReadoutHits() < 70);
   cnc[6]  = (ecalVeto.getShowerRMS() < 110.);
   cnc[7]  = (ecalVeto.getMaxCellDep() < 300.);
   cnc[8]  = (ecalVeto.getStdLayerHit() < 5.);
@@ -1002,21 +1059,109 @@ void CutBasedDM::analyze(const framework::Event& event) {
   for (size_t i=0;i<11;i++) {
     bool ok = true;
     for (size_t j=0;j<=i;j++) { if (!cnc[j]) { ok = false; break; } }
-    if (ok) histograms_.fill("CnCCutFlow_RecoilX", i, ecalVeto.getRecoilX());
+    if (ok) {
+      histograms_.fill("CnCCutFlow_RecoilX", i, ecalVeto.getRecoilX());
+      histograms_.fill("CnCCutFlow_NHits", i, ecalVeto.getNReadoutHits());
+    }
   }
 
   // ParticleNet flow; its preselection is the looser pnet one, not ecal_pres
   bool pnet[5];
   pnet[0] = acceptance;
   pnet[1] = trigResult.passed();
-  pnet[2] = (ecalVeto.getNReadoutHits() < 90 && ecalVeto.getSummedTightIso() < 1100.);
-  pnet[3] = (pnetDisc > pnet_cut_);
+  pnet[2] = (has_ecal_readout_hit && ecalVeto.getNReadoutHits() < 90 && ecalVeto.getSummedTightIso() < 1100.);
+  pnet[3] = pnetPass;   // cut lives in EcalPnetVetoProcessor, see above
   pnet[4] = (hcalMaxPE < 8);
+  if (pnet[0] && pnet[1] && pnet[2]) {
+    histograms_.fill("PNetDisc", pnetDisc);
+    // same events after the HCal veto: scanning the PNet threshold on this
+    // gives the final background yield for any cut, with no re-run
+    if (pnet[4]) {
+      histograms_.fill("PNetDiscPostHcal", pnetDisc);
+      if (ecalVeto.getNReadoutHits() > 0)
+        histograms_.fill("PNetDiscPostHcalWithHit", pnetDisc);
+    }
+  }
   for (size_t i=0;i<5;i++) {
     bool ok = true;
     for (size_t j=0;j<=i;j++) { if (!pnet[j]) { ok = false; break; } }
-    if (ok) histograms_.fill("PNetCutFlow_RecoilX", i, ecalVeto.getRecoilX());
+    if (ok) {
+      histograms_.fill("PNetCutFlow_RecoilX", i, ecalVeto.getRecoilX());
+      histograms_.fill("PNetCutFlow_NHits", i, ecalVeto.getNReadoutHits());
+    }
   }
+
+  // Aligned flows: same non-ECal cuts as the BDT flow, in the same order
+  const bool tracker_ok = trackerVeto.passesVeto();
+  const bool straight_ok = has_mip_result_ ? (mipResult.getNStraightTracks() < 3) : true;
+  bool cnca[13];
+  cnca[0]  = acceptance;
+  cnca[1]  = trigResult.passed();
+  cnca[2]  = has_ecal_readout_hit;
+  cnca[3]  = tracker_ok;
+  cnca[4]  = (ecalVeto.getSummedDet() < 3500.);
+  cnca[5]  = (ecalVeto.getSummedTightIso() < 800.);
+  cnca[6]  = (ecalVeto.getEcalBackEnergy() < 250.);
+  cnca[7]  = (ecalVeto.getNReadoutHits() < 70);
+  cnca[8]  = (ecalVeto.getShowerRMS() < 110.);
+  cnca[9]  = (ecalVeto.getMaxCellDep() < 300.);
+  cnca[10] = (ecalVeto.getStdLayerHit() < 5.);
+  cnca[11] = straight_ok;
+  cnca[12] = (hcalMaxPE < 8);
+  for (size_t i=0;i<13;i++) {
+    bool ok = true;
+    for (size_t j=0;j<=i;j++) { if (!cnca[j]) { ok = false; break; } }
+    if (ok) histograms_.fill("CnCAlignedCutFlow_RecoilX", i, ecalVeto.getRecoilX());
+  }
+
+  bool pna[8];
+  pna[0] = acceptance;
+  pna[1] = trigResult.passed();
+  pna[2] = has_ecal_readout_hit;
+  pna[3] = (ecalVeto.getNReadoutHits() < 90 && ecalVeto.getSummedTightIso() < 1100.);
+  pna[4] = tracker_ok;
+  pna[5] = pnetPass;
+  pna[6] = straight_ok;
+  pna[7] = (hcalMaxPE < 8);
+  for (size_t i=0;i<8;i++) {
+    bool ok = true;
+    for (size_t j=0;j<=i;j++) { if (!pna[j]) { ok = false; break; } }
+    if (ok) histograms_.fill("PNetAlignedCutFlow_RecoilX", i, ecalVeto.getRecoilX());
+  }
+  // every cut but ParticleNet itself, for the threshold scan
+  if (pna[0] && pna[1] && pna[2] && pna[3] && pna[4] && pna[6] && pna[7])
+    histograms_.fill("PNetAlignedDiscPostAll", pnetDisc);
+
+  // Same, without the tracker veto: does the ECal selection alone hold the line?
+  bool bnt[6];
+  bnt[0] = acceptance;
+  bnt[1] = trigResult.passed();
+  bnt[2] = preselection && has_ecal_readout_hit;
+  bnt[3] = (ecalVeto.getDisc() > bdt_cut_);
+  bnt[4] = straight_ok;
+  bnt[5] = (hcalMaxPE < 8);
+  for (size_t i=0;i<6;i++) {
+    bool ok = true;
+    for (size_t j=0;j<=i;j++) { if (!bnt[j]) { ok = false; break; } }
+    if (ok) histograms_.fill("BDTNoTrkCutFlow_RecoilX", i, ecalVeto.getRecoilX());
+  }
+
+  bool pnt[7];
+  pnt[0] = acceptance;
+  pnt[1] = trigResult.passed();
+  pnt[2] = has_ecal_readout_hit;
+  pnt[3] = (ecalVeto.getNReadoutHits() < 90 && ecalVeto.getSummedTightIso() < 1100.);
+  pnt[4] = pnetPass;
+  pnt[5] = straight_ok;
+  pnt[6] = (hcalMaxPE < 8);
+  for (size_t i=0;i<7;i++) {
+    bool ok = true;
+    for (size_t j=0;j<=i;j++) { if (!pnt[j]) { ok = false; break; } }
+    if (ok) histograms_.fill("PNetNoTrkCutFlow_RecoilX", i, ecalVeto.getRecoilX());
+  }
+  // every cut but ParticleNet itself, for the threshold scan
+  if (pnt[0] && pnt[1] && pnt[2] && pnt[3] && pnt[5] && pnt[6])
+    histograms_.fill("PNetNoTrkDiscPostAll", pnetDisc);
 
   // All other cutflows now use the same 8-bin structure
   for (size_t i=0;i<sizeof(passedCutsArray);i++) {
